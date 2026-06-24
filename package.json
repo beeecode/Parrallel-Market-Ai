@@ -1,27 +1,35 @@
 {
   "name": "parallel-market-ai",
-  "version": "0.1.0",
   "private": true,
   "packageManager": "yarn@4.9.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "next": "14.2.15",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
-  },
-  "devDependencies": {
-    "@types/node": "22.10.2",
-    "@types/react": "18.3.12",
-    "@types/react-dom": "18.3.1",
-    "autoprefixer": "10.4.20",
-    "eslint": "8.57.1",
-    "eslint-config-next": "14.2.15",
-    "postcss": "8.4.49",
-    "tailwindcss": "3.4.17",
-    "typescript": "5.7.2"
+    "dev:web": "yarn workspace @parallel-market-ai/web dev",
+    "dev:cms": "yarn workspace @parallel-market-ai/cms dev",
+    "dev:prototype": "yarn workspace @parallel-market-ai/next-prototype dev",
+    "build:web": "yarn workspace @parallel-market-ai/web build",
+    "build:cms": "yarn workspace @parallel-market-ai/cms build",
+    "build:prototype": "yarn workspace @parallel-market-ai/next-prototype build",
+    "build:all": "yarn build:prototype && yarn build:web && yarn build:cms",
+    "lint:web": "yarn workspace @parallel-market-ai/web lint",
+    "lint:cms": "yarn workspace @parallel-market-ai/cms lint",
+    "lint:prototype": "yarn workspace @parallel-market-ai/next-prototype lint",
+    "lint:all": "yarn lint:prototype && yarn lint:web && yarn lint:cms",
+    "generate:types:cms": "yarn workspace @parallel-market-ai/cms generate:types",
+    "generate:importmap:cms": "yarn workspace @parallel-market-ai/cms generate:importmap",
+    "migrate:cms": "yarn workspace @parallel-market-ai/cms migrate",
+    "migrate:status:cms": "yarn workspace @parallel-market-ai/cms migrate:status",
+    "seed:cms": "yarn workspace @parallel-market-ai/cms seed",
+    "typecheck:web": "yarn workspace @parallel-market-ai/web check",
+    "typecheck:cms": "yarn workspace @parallel-market-ai/cms typecheck",
+    "typecheck:packages": "yarn workspace @parallel-market-ai/shared-types typecheck && yarn workspace @parallel-market-ai/shared-config typecheck && yarn workspace @parallel-market-ai/validation typecheck",
+    "typecheck:all": "yarn typecheck:web && yarn typecheck:cms && yarn typecheck:packages",
+    "test:cms": "yarn workspace @parallel-market-ai/cms test",
+    "test:web": "yarn workspace @parallel-market-ai/web test",
+    "test:e2e:web": "yarn workspace @parallel-market-ai/web test:e2e",
+    "workspaces:list": "yarn workspaces list"
   }
 }

@@ -1,12 +1,45 @@
-.next/
 node_modules/
+
+# Yarn
 .yarn/*
 !.yarn/releases
 !.yarn/plugins
 !.yarn/sdks
 !.yarn/versions
-coverage/
+
+# Framework output
+.next/
+.svelte-kit/
+build/
 dist/
-*.log
-.env*
+.vercel/
+.netlify/
+.turbo/
+
+# Tests and coverage
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.*.local
 !.env.example
+
+# Payload generated temporary files
+payload-generated-schema.ts
+apps/cms/media/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
