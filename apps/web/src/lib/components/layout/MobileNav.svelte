@@ -1,12 +1,29 @@
 <script lang="ts">
 	import { Menu, X } from 'lucide-svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
 	import LogoMark from '$lib/components/layout/LogoMark.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import { APP_NAME } from '$lib/constants/app';
+	import type { AuthenticatedUser } from '$lib/types/auth';
 
-	let { activePath }: { activePath: string } = $props();
+	let { activePath, user }: { activePath: string; user: AuthenticatedUser } = $props();
+	let drawer: HTMLElement;
+	let menuButton: HTMLButtonElement;
+	let restoreMenuFocus = false;
+
+	function closeNavigation(): void {
+		restoreMenuFocus = true;
+		drawer?.hidePopover();
+	}
+
+	afterNavigate(() => {
+		if (!restoreMenuFocus) return;
+
+		restoreMenuFocus = false;
+		requestAnimationFrame(() => menuButton?.focus());
+	});
 </script>
 
 <header
@@ -18,6 +35,7 @@
 	</a>
 	<button
 		aria-label="Open navigation menu"
+		bind:this={menuButton}
 		class="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-border bg-ink-800/70 text-slate-100 transition hover:border-brand-light/55 hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-light focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950"
 		popovertarget="mobile-navigation-drawer"
 		type="button"
@@ -28,6 +46,7 @@
 
 <div
 	aria-label="Mobile navigation drawer"
+	bind:this={drawer}
 	class="m-0 h-dvh max-h-none w-[min(20rem,86vw)] max-w-none border-0 bg-transparent p-0"
 	id="mobile-navigation-drawer"
 	popover="auto"
@@ -42,7 +61,7 @@
 		>
 			<X aria-hidden="true" size={18} />
 		</button>
-		<Sidebar {activePath} />
+		<Sidebar {activePath} onnavigate={closeNavigation} {user} />
 	</div>
 </div>
 

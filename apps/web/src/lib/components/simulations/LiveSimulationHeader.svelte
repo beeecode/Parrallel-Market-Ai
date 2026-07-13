@@ -9,7 +9,7 @@
 		elapsedTime
 	}: {
 		title: string;
-		status: 'Running' | 'Paused' | 'Completed';
+		status: 'Running' | 'Paused' | 'Completed' | 'Draft' | 'Queued' | 'Failed';
 		elapsedTime: string;
 	} = $props();
 </script>

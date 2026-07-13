@@ -6,85 +6,163 @@
 	import MessageInput from '$lib/components/simulations/MessageInput.svelte';
 	import SimulationStats from '$lib/components/simulations/SimulationStats.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
 	import { simulationTabs } from '$lib/constants/tabs';
-	import { getLiveSimulationData } from '$lib/data/simulation';
-	import type { ChatMessage, SimulationTabId } from '$lib/types/simulation';
-	import { getCurrentTimeLabel } from '$lib/utils/format';
-	import { validateMessage } from '$lib/validation/message';
+	import type {
+		ChatMessage,
+		SimulationTabId,
+		SimulationWorkspaceViewModel
+	} from '$lib/types/simulation';
 
-	const simulationData = getLiveSimulationData();
+	let {
+		simulationData,
+		messageDraft,
+		messageError
+	}: {
+		simulationData: SimulationWorkspaceViewModel | null;
+		messageDraft?: string;
+		messageError?: string;
+	} = $props();
 
 	let activeTab = $state<SimulationTabId>('live-chat');
-	let activeAgentId = $state(simulationData.agents[0]?.id ?? '');
-	let messages = $state<ChatMessage[]>([...simulationData.messages]);
+	let activeAgentId = $state('');
 	let draft = $state('');
-	let error = $state<string | undefined>();
+	let confirmedMessagesByThread = $state<Record<string, ChatMessage[]>>({});
+
+	$effect(() => {
+		if (
+			simulationData &&
+			(!activeAgentId || !simulationData.agents.some((agent) => agent.id === activeAgentId))
+		) {
+			activeAgentId = simulationData.activeAgentId;
+		}
+	});
+
+	$effect(() => {
+		if (messageDraft !== undefined) {
+			draft = messageDraft;
+		}
+	});
+
+	const activeAgent = $derived(simulationData?.agents.find((agent) => agent.id === activeAgentId));
+	const activeThreadKey = $derived(
+		simulationData && activeAgentId ? `${simulationData.simulationId}:${activeAgentId}` : ''
+	);
+	const serverMessages = $derived(simulationData?.messagesByAgent[activeAgentId] ?? []);
+	const messages = $derived(
+		mergeMessages(
+			serverMessages,
+			activeThreadKey ? (confirmedMessagesByThread[activeThreadKey] ?? []) : []
+		)
+	);
 
 	function handleTabChange(tab: string): void {
 		activeTab = tab as SimulationTabId;
 	}
 
-	function handleSendMessage(): void {
-		const result = validateMessage(draft);
+	function mergeMessages(
+		serverMessages: ChatMessage[],
+		confirmedMessages: ChatMessage[]
+	): ChatMessage[] {
+		const merged: ChatMessage[] = [];
 
-		if (!result.valid) {
-			error = result.error;
-			return;
+		for (const message of [...serverMessages, ...confirmedMessages]) {
+			if (!merged.some((existing) => existing.id === message.id)) {
+				merged.push(message);
+			}
 		}
 
-		messages = [
-			...messages,
-			{
-				id: `local-${Date.now()}`,
-				sender: 'business',
-				body: draft.trim(),
-				timestamp: getCurrentTimeLabel()
-			}
-		];
-		draft = '';
-		error = undefined;
+		return merged.sort(
+			(left, right) => new Date(left.sentAt).getTime() - new Date(right.sentAt).getTime()
+		);
+	}
+
+	function handleMessageSent(message: ChatMessage): void {
+		if (!activeThreadKey) return;
+
+		const existingMessages = mergeMessages(
+			serverMessages,
+			confirmedMessagesByThread[activeThreadKey] ?? []
+		);
+		if (existingMessages.some((existing) => existing.id === message.id)) return;
+
+		confirmedMessagesByThread = {
+			...confirmedMessagesByThread,
+			[activeThreadKey]: [...(confirmedMessagesByThread[activeThreadKey] ?? []), message]
+		};
 	}
 </script>
 
-<Card class="overflow-hidden">
-	<LiveSimulationHeader
-		elapsedTime={simulationData.elapsedTime}
-		status={simulationData.status}
-		title={simulationData.title}
-	/>
-	<Tabs
-		{activeTab}
-		ariaLabel="Live simulation views"
-		onchange={handleTabChange}
-		tabs={simulationTabs}
-	/>
+{#if simulationData}
+	<Card class="overflow-hidden">
+		<LiveSimulationHeader
+			elapsedTime={simulationData.elapsedTime}
+			status={simulationData.status}
+			title={simulationData.title}
+		/>
+		<Tabs
+			{activeTab}
+			ariaLabel="Live simulation views"
+			onchange={handleTabChange}
+			tabs={simulationTabs}
+		/>
 
-	{#if activeTab === 'live-chat'}
-		<div class="grid min-h-[34rem] min-w-0 max-w-full md:grid-cols-[19rem_minmax(0,1fr)]">
-			<CustomerAgentList
-				{activeAgentId}
-				agents={simulationData.agents}
-				onselect={(id) => (activeAgentId = id)}
-			/>
-			<div class="flex min-w-0 flex-col">
-				<ChatThread {messages} />
-				<MessageInput
-					{error}
-					onchange={(value) => {
-						draft = value;
-						if (error) error = undefined;
-					}}
-					onsubmit={handleSendMessage}
-					value={draft}
+		{#if activeTab === 'live-chat'}
+			{#if simulationData.agents.length === 0}
+				<EmptyState
+					class="m-5"
+					description="This simulation is saved as a draft. Customer agents will appear after the simulation engine is implemented."
+					title="No customer agents yet"
 				/>
-			</div>
-		</div>
-	{:else if activeTab === 'customer-agents'}
-		<SimulationStats agents={simulationData.agents} stats={simulationData.stats} />
-	{:else if activeTab === 'activity-feed'}
-		<ActivityFeed activity={simulationData.activity} />
-	{:else}
-		<SimulationStats stats={simulationData.stats} />
-	{/if}
-</Card>
+			{:else}
+				<div class="grid min-h-[34rem] min-w-0 max-w-full md:grid-cols-[19rem_minmax(0,1fr)]">
+					<CustomerAgentList
+						{activeAgentId}
+						agents={simulationData.agents}
+						onselect={(id) => (activeAgentId = id)}
+					/>
+					<div class="flex min-w-0 flex-col">
+						{#if activeAgent?.conversationId}
+							<ChatThread {messages} />
+						{:else}
+							<EmptyState
+								class="m-5"
+								description="This customer agent does not have a conversation record yet."
+								title="No conversation"
+							/>
+						{/if}
+						<MessageInput
+							agentId={activeAgentId}
+							conversationId={activeAgent?.conversationId}
+							error={messageError}
+							onchange={(value) => (draft = value)}
+							onsent={handleMessageSent}
+							simulationId={simulationData.simulationId}
+							value={draft}
+						/>
+					</div>
+				</div>
+			{/if}
+		{:else if activeTab === 'customer-agents'}
+			{#if simulationData.agents.length === 0}
+				<EmptyState
+					class="m-5"
+					description="Customer agents are not generated during this frontend phase."
+					title="No customer agents yet"
+				/>
+			{:else}
+				<SimulationStats agents={simulationData.agents} stats={simulationData.stats} />
+			{/if}
+		{:else if activeTab === 'activity-feed'}
+			<ActivityFeed activity={simulationData.activity} />
+		{:else}
+			<SimulationStats stats={simulationData.stats} />
+		{/if}
+	</Card>
+{:else}
+	<EmptyState
+		description="No running or completed simulation is available for your account."
+		title="No accessible simulation"
+	/>
+{/if}

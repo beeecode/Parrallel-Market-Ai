@@ -1,6 +1,5 @@
-import type { DashboardData } from '$lib/types/dashboard';
-
-const dashboardData: DashboardData = {
+// Visual-reference fixture retained for comparison tests. Runtime routes use Payload services.
+const dashboardData = {
 	successProbability: 72,
 	successCopy: 'Your business is likely to succeed in this market with the right changes.',
 	revenueForecast: '₦4.2M - ₦6.8M',
@@ -64,6 +63,6 @@ const dashboardData: DashboardData = {
 	]
 };
 
-export function getDashboardData(): DashboardData {
+export function getDashboardData() {
 	return dashboardData;
 }

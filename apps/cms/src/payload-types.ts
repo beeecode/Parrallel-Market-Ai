@@ -419,6 +419,7 @@ export interface Message {
   customerAgent?: (number | null) | CustomerAgent;
   senderType: 'customer' | 'business' | 'system';
   content: string;
+  clientSubmissionId?: string | null;
   sentiment?: ('positive' | 'neutral' | 'negative' | 'mixed' | 'unknown') | null;
   buyingIntent?: ('none' | 'low' | 'medium' | 'high' | 'converted') | null;
   objectionCategory?: string | null;
@@ -901,6 +902,7 @@ export interface MessagesSelect<T extends boolean = true> {
   customerAgent?: T;
   senderType?: T;
   content?: T;
+  clientSubmissionId?: T;
   sentiment?: T;
   buyingIntent?: T;
   objectionCategory?: T;

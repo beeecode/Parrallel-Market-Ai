@@ -1,14 +1,19 @@
 <script lang="ts">
-	import { Download, FileBarChart } from 'lucide-svelte';
+	import { Download, ExternalLink, FileBarChart } from 'lucide-svelte';
+	import { resolve } from '$app/paths';
 
 	import Button from '$lib/components/ui/Button.svelte';
 
 	let {
 		title,
-		reportText
+		reportText,
+		filename,
+		reportId
 	}: {
 		title: string;
 		reportText: string;
+		filename: string;
+		reportId?: string;
 	} = $props();
 
 	function downloadReport(): void {
@@ -16,7 +21,7 @@
 		const url = URL.createObjectURL(blob);
 		const anchor = document.createElement('a');
 		anchor.href = url;
-		anchor.download = 'shawarma-spot-simulation-report.txt';
+		anchor.download = filename;
 		anchor.click();
 		URL.revokeObjectURL(url);
 	}
@@ -33,8 +38,19 @@
 		</span>
 		<h1 class="truncate text-sm font-semibold text-slate-100">{title}</h1>
 	</div>
-	<Button onclick={downloadReport} size="sm">
-		<Download aria-hidden="true" size={15} />
-		Download Report
-	</Button>
+	<div class="flex flex-wrap items-center gap-2">
+		{#if reportId}
+			<a
+				class="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-ink-800/70 px-3 text-xs font-semibold text-slate-100 transition hover:border-brand-light/55 hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-light"
+				href={resolve('/reports/[id]', { id: reportId })}
+			>
+				<ExternalLink aria-hidden="true" size={14} />
+				View Detail
+			</a>
+		{/if}
+		<Button onclick={downloadReport} size="sm">
+			<Download aria-hidden="true" size={15} />
+			Download Text Report
+		</Button>
+	</div>
 </header>

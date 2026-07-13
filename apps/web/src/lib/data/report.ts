@@ -1,6 +1,5 @@
-import type { ReportData } from '$lib/types/report';
-
-const reportData: ReportData = {
+// Visual-reference fixture retained for comparison tests. Runtime routes use Payload services.
+const reportData = {
 	title: 'Simulation Report - Shawarma Spot Menu',
 	successProbability: 72,
 	successLabel: 'Viable with improvements',
@@ -17,6 +16,6 @@ const reportData: ReportData = {
 	currentAveragePrice: '₦4,200'
 };
 
-export function getReportData(): ReportData {
+export function getReportData() {
 	return reportData;
 }

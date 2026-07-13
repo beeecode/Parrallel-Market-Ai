@@ -87,6 +87,19 @@ export const Messages: CollectionConfig = {
       validate: messageContent,
     },
     {
+      name: 'clientSubmissionId',
+      type: 'text',
+      index: true,
+      unique: true,
+      maxLength: 100,
+      admin: {
+        hidden: true,
+      },
+      access: {
+        update: () => false,
+      },
+    },
+    {
       name: 'sentiment',
       type: 'select',
       defaultValue: 'unknown',

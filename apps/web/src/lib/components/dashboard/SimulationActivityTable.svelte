@@ -40,7 +40,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-border/65">
-					{#each rows as row (row.simulation)}
+					{#each rows as row (row.id)}
 						<tr class="text-slate-300 transition hover:bg-white/[0.025]">
 							<td class="py-4 pr-4 font-medium text-slate-100">{row.simulation}</td>
 							<td class="px-4 py-4">{row.targetMarket}</td>
@@ -59,14 +59,14 @@
 		</div>
 
 		<div class="mt-4 divide-y divide-border/65 md:hidden">
-			{#each rows as row (row.simulation)}
+			{#each rows as row (row.id)}
 				<article class="space-y-3 py-4 first:pt-1">
 					<div class="flex items-start justify-between gap-3">
 						<div>
 							<h3 class="text-sm font-semibold text-slate-100">{row.simulation}</h3>
 							<p class="mt-1 text-xs text-slate-500">{row.targetMarket}</p>
 						</div>
-						<Badge tone="success">{row.status}</Badge>
+						<Badge tone={row.status === 'Completed' ? 'success' : 'purple'}>{row.status}</Badge>
 					</div>
 					<dl class="grid grid-cols-2 gap-3 text-xs">
 						<div>

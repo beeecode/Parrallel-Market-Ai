@@ -25,13 +25,24 @@
 	role="log"
 >
 	{#each messages as message (message.id)}
-		<div class={['flex', message.sender === 'business' ? 'justify-end' : 'justify-start']}>
+		<div
+			class={[
+				'flex',
+				message.sender === 'business'
+					? 'justify-end'
+					: message.sender === 'system'
+						? 'justify-center'
+						: 'justify-start'
+			]}
+		>
 			<div
 				class={[
 					'max-w-[86%] rounded-lg px-4 py-2.5 text-xs leading-5 sm:max-w-[68%]',
 					message.sender === 'business'
 						? 'rounded-br-sm border border-emerald-700/45 bg-emerald-800/78 text-white'
-						: 'rounded-bl-sm bg-slate-100 text-slate-950'
+						: message.sender === 'system'
+							? 'border border-border bg-ink-800 text-slate-300'
+							: 'rounded-bl-sm bg-slate-100 text-slate-950'
 				]}
 			>
 				<p>{message.body}</p>

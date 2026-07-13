@@ -1,6 +1,5 @@
-import type { LiveSimulationData } from '$lib/types/simulation';
-
-const liveSimulationData: LiveSimulationData = {
+// Visual-reference fixture retained for comparison tests. Runtime routes use Payload services.
+const liveSimulationData = {
 	title: 'Live Simulation - Shawarma Spot Menu',
 	status: 'Running',
 	elapsedTime: '02:15:43',
@@ -135,6 +134,6 @@ const liveSimulationData: LiveSimulationData = {
 	]
 };
 
-export function getLiveSimulationData(): LiveSimulationData {
+export function getLiveSimulationData() {
 	return liveSimulationData;
 }

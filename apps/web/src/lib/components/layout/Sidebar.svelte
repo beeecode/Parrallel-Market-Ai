@@ -1,21 +1,31 @@
 <script lang="ts">
+	import { LogOut } from 'lucide-svelte';
 	import { resolve } from '$app/paths';
-	import type { RouteId } from '$app/types';
 
 	import LogoMark from '$lib/components/layout/LogoMark.svelte';
-	import { APP_NAME, USER_PROFILE } from '$lib/constants/app';
+	import { APP_NAME } from '$lib/constants/app';
 	import { navigationItems } from '$lib/constants/navigation';
+	import type { AuthenticatedUser } from '$lib/types/auth';
 
 	let {
 		activePath,
-		onnavigate
+		onnavigate,
+		user
 	}: {
 		activePath: string;
 		onnavigate?: () => void;
+		user: AuthenticatedUser;
 	} = $props();
 
 	function isActive(href: string): boolean {
 		return activePath === href || activePath.startsWith(`${href}/`);
+	}
+
+	function roleLabel(role: AuthenticatedUser['role']): string {
+		return role
+			.split('-')
+			.map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+			.join(' ');
 	}
 </script>
 
@@ -51,7 +61,7 @@
 							? 'bg-brand text-white shadow-[0_4px_12px_rgba(124,58,237,0.12)]'
 							: 'text-slate-400 hover:bg-white/[0.045] hover:text-slate-100'
 					]}
-					href={resolve(item.href as RouteId)}
+					href={resolve(item.href)}
 					onclick={onnavigate}
 				>
 					<Icon aria-hidden="true" size={18} strokeWidth={1.8} />
@@ -64,16 +74,25 @@
 	<div class="mt-auto border-t border-border/70 pt-4">
 		<div class="flex items-center gap-3 rounded-lg border border-border/85 bg-ink-900/55 p-3">
 			<img
-				alt={`${USER_PROFILE.name} avatar`}
+				alt={`${user.name} avatar`}
 				class="h-10 w-10 rounded-full border border-border bg-ink-800 object-cover"
 				height="40"
-				src={USER_PROFILE.avatar}
+				src={user.avatarUrl || '/assets/2d/avatars/person.svg'}
 				width="40"
 			/>
-			<div class="min-w-0">
-				<p class="truncate text-sm font-semibold text-slate-100">{USER_PROFILE.name}</p>
-				<p class="text-xs text-slate-500">{USER_PROFILE.plan}</p>
+			<div class="min-w-0 flex-1">
+				<p class="truncate text-sm font-semibold text-slate-100">{user.name}</p>
+				<p class="truncate text-xs text-slate-500">{roleLabel(user.role)}</p>
 			</div>
+			<form action={resolve('/logout')} method="POST">
+				<button
+					aria-label="Sign out"
+					class="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-white/5 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-light"
+					type="submit"
+				>
+					<LogOut aria-hidden="true" size={16} />
+				</button>
+			</form>
 		</div>
 	</div>
 </aside>
