@@ -57,7 +57,22 @@ async function createCustomer(user, payload) {
     throw new ConflictError(DUPLICATE_MESSAGE);
   }
 
-  const created = await customerRepository.create({ ...payload, owner: user.sub });
+  // Built explicitly (not spread from `payload`) so a client can never sneak an
+  // unlisted field — e.g. `isActive: false` — into a newly created document;
+  // express-validator validates known fields but never strips unknown ones.
+  const created = await customerRepository.create({
+    fullName: payload.fullName,
+    email: payload.email,
+    phone: payload.phone,
+    company: payload.company,
+    industry: payload.industry,
+    jobTitle: payload.jobTitle,
+    country: payload.country,
+    tags: payload.tags,
+    notes: payload.notes,
+    status: payload.status,
+    owner: user.sub,
+  });
   const populated = await customerRepository.findById(created.id);
   return populated.toJSON();
 }

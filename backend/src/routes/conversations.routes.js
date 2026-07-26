@@ -1,18 +1,18 @@
 const { Router } = require('express');
 
-const customerAgentController = require('../controllers/customerAgent.controller');
-const simulationController = require('../controllers/simulation.controller');
+const conversationController = require('../controllers/conversation.controller');
+const messageController = require('../controllers/message.controller');
 const { ROLES } = require('../constants/roles');
 const { authenticate } = require('../middlewares/authentication');
 const { requireRoles } = require('../middlewares/authorization');
 const { validate } = require('../middlewares/validate');
-const { listCustomerAgentsValidator } = require('../validators/customerAgent.validator');
+const { listMessagesValidator } = require('../validators/message.validator');
 const {
-  createSimulationValidator,
-  listSimulationsValidator,
-  simulationIdParamValidator,
-  updateSimulationValidator,
-} = require('../validators/simulation.validator');
+  conversationIdParamValidator,
+  createConversationValidator,
+  listConversationsValidator,
+  updateConversationValidator,
+} = require('../validators/conversation.validator');
 
 const router = Router();
 const MANAGE_ROLES = [ROLES.ADMIN, ROLES.BUSINESS_OWNER];
@@ -21,14 +21,14 @@ router.use(authenticate);
 
 /**
  * @openapi
- * /simulations:
+ * /conversations:
  *   get:
- *     tags: [Simulations]
- *     summary: List simulations.
+ *     tags: [Conversations]
+ *     summary: List conversations.
  *     description: >
- *       BUSINESS_OWNER sees only their own simulations. ADMIN, ANALYST, and
- *       VIEWER see simulations across every owner. Soft-deleted (archived)
- *       simulations are never returned.
+ *       BUSINESS_OWNER sees only their own conversations. ADMIN, ANALYST,
+ *       and VIEWER see conversations across every owner. Soft-deleted
+ *       (archived) conversations are never returned.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
@@ -39,20 +39,26 @@ router.use(authenticate);
  *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
  *       - in: query
  *         name: search
- *         description: Case-insensitive substring match against title, industry, and description.
- *         schema: { type: string, example: growth }
+ *         description: Case-insensitive substring match against title and metadata.tags.
+ *         schema: { type: string, example: pricing }
  *       - in: query
  *         name: sort
- *         schema: { type: string, enum: [title, status, progress, createdAt, updatedAt], default: createdAt }
+ *         schema: { type: string, enum: [createdAt, updatedAt, lastActivity, messageCount], default: createdAt }
  *       - in: query
  *         name: order
  *         schema: { type: string, enum: [asc, desc], default: desc }
  *       - in: query
  *         name: status
- *         schema: { type: string, enum: [draft, running, paused, completed, cancelled] }
+ *         schema: { type: string, enum: [Open, Closed, Archived] }
+ *       - in: query
+ *         name: simulation
+ *         schema: { type: string }
+ *       - in: query
+ *         name: customerAgent
+ *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Paginated simulation list.
+ *         description: Paginated conversation list.
  *         content:
  *           application/json:
  *             schema:
@@ -64,7 +70,7 @@ router.use(authenticate);
  *                     data:
  *                       type: object
  *                       properties:
- *                         items: { type: array, items: { $ref: '#/components/schemas/Simulation' } }
+ *                         items: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
  *                         pagination: { $ref: '#/components/schemas/PaginationMeta' }
  *       401:
  *         description: Missing, invalid, or expired access token.
@@ -73,18 +79,15 @@ router.use(authenticate);
  *         description: Validation failed.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  */
-router.get('/', listSimulationsValidator, validate, simulationController.list);
+router.get('/', listConversationsValidator, validate, conversationController.list);
 
 /**
  * @openapi
- * /simulations/{id}:
+ * /conversations/{id}:
  *   get:
- *     tags: [Simulations]
- *     summary: Get a single simulation by id.
- *     description: >
- *       BUSINESS_OWNER only sees their own simulations — one owned by
- *       someone else responds 404, not 403. ADMIN, ANALYST, and VIEWER may
- *       fetch any simulation.
+ *     tags: [Conversations]
+ *     summary: Get a single conversation by id.
+ *     description: BUSINESS_OWNER only sees their own conversations — one owned by someone else responds 404, not 403. ADMIN, ANALYST, and VIEWER may fetch any conversation.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -93,7 +96,7 @@ router.get('/', listSimulationsValidator, validate, simulationController.list);
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: The simulation.
+ *         description: The conversation.
  *         content:
  *           application/json:
  *             schema:
@@ -101,23 +104,23 @@ router.get('/', listSimulationsValidator, validate, simulationController.list);
  *                 - type: object
  *                   properties: { success: { type: boolean, example: true }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { type: object, properties: { simulation: { $ref: '#/components/schemas/Simulation' } } } }
+ *                   properties: { data: { type: object, properties: { conversation: { $ref: '#/components/schemas/Conversation' } } } }
  *       401:
  *         description: Missing, invalid, or expired access token.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       404:
- *         description: Simulation does not exist, is archived, or is not owned by the caller.
+ *         description: Conversation does not exist, is archived, or is not owned by the caller.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  */
-router.get('/:id', simulationIdParamValidator, validate, simulationController.getById);
+router.get('/:id', conversationIdParamValidator, validate, conversationController.getById);
 
 /**
  * @openapi
- * /simulations/{id}/customer-agents:
+ * /conversations/{id}/messages:
  *   get:
- *     tags: [Customer Agents]
- *     summary: List the customer agents belonging to a simulation.
- *     description: Access to the simulation is the only gate — if you can read the simulation, you can read its agents.
+ *     tags: [Messages]
+ *     summary: List the messages belonging to a conversation.
+ *     description: Access to the conversation is the only gate — if you can read the conversation, you can read its messages.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -132,19 +135,17 @@ router.get('/:id', simulationIdParamValidator, validate, simulationController.ge
  *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
  *       - in: query
  *         name: search
+ *         description: Case-insensitive substring match against content.
  *         schema: { type: string }
  *       - in: query
  *         name: sort
- *         schema: { type: string, enum: [name, status, createdAt, updatedAt], default: createdAt }
+ *         schema: { type: string, enum: [createdAt, updatedAt], default: createdAt }
  *       - in: query
  *         name: order
  *         schema: { type: string, enum: [asc, desc], default: desc }
- *       - in: query
- *         name: status
- *         schema: { type: string, enum: [active, inactive] }
  *     responses:
  *       200:
- *         description: Paginated customer agent list for this simulation.
+ *         description: Paginated message list for this conversation.
  *         content:
  *           application/json:
  *             schema:
@@ -156,35 +157,28 @@ router.get('/:id', simulationIdParamValidator, validate, simulationController.ge
  *                     data:
  *                       type: object
  *                       properties:
- *                         items: { type: array, items: { $ref: '#/components/schemas/CustomerAgent' } }
+ *                         items: { type: array, items: { $ref: '#/components/schemas/Message' } }
  *                         pagination: { $ref: '#/components/schemas/PaginationMeta' }
  *       401:
  *         description: Missing, invalid, or expired access token.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       404:
- *         description: Simulation does not exist, is archived, or is not owned by the caller.
+ *         description: Conversation does not exist, is archived, or is not owned by the caller.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  */
-router.get(
-  '/:id/customer-agents',
-  simulationIdParamValidator,
-  listCustomerAgentsValidator,
-  validate,
-  customerAgentController.listForSimulation,
-);
+router.get('/:id/messages', conversationIdParamValidator, listMessagesValidator, validate, messageController.listForConversation);
 
 /**
  * @openapi
- * /simulations:
+ * /conversations:
  *   post:
- *     tags: [Simulations]
- *     summary: Create a simulation.
+ *     tags: [Conversations]
+ *     summary: Create a conversation.
  *     description: >
- *       Requires ADMIN or BUSINESS_OWNER. Always owned by the authenticated
- *       caller, and the referenced product must exist and be accessible to
- *       them (404 otherwise). Always created with status "draft" — status
- *       is advanced afterward via PATCH. Titles must be unique per
- *       owner+product (case-insensitive).
+ *       Requires ADMIN or BUSINESS_OWNER. The referenced customer agent
+ *       must exist and be accessible to the caller (404 otherwise).
+ *       `owner` and `simulation` are always derived from the agent, never
+ *       accepted from the client.
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -192,20 +186,14 @@ router.get(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [title, product]
+ *             required: [customerAgent, title]
  *             properties:
- *               title: { type: string, example: Q1 Growth Cohort Beta }
- *               product: { type: string, example: 6602a1f1a1b2c3d4e5f60abc }
- *               description: { type: string }
- *               industry: { type: string, example: Retail }
- *               targetAudience: { type: string, example: SMB operations leads }
- *               objective: { type: string, example: Validate pricing sensitivity before GA launch }
- *               customerCount: { type: integer, minimum: 0, example: 10 }
- *               estimatedDuration: { type: integer, minimum: 0, example: 30 }
- *               configuration: { $ref: '#/components/schemas/SimulationConfiguration' }
+ *               customerAgent: { type: string, example: 6702a1f1a1b2c3d4e5f60bbb }
+ *               title: { type: string, example: Pricing objections walkthrough }
+ *               metadata: { $ref: '#/components/schemas/ConversationMetadata' }
  *     responses:
  *       201:
- *         description: Simulation created.
+ *         description: Conversation created.
  *         content:
  *           application/json:
  *             schema:
@@ -213,37 +201,33 @@ router.get(
  *                 - type: object
  *                   properties: { success: { type: boolean, example: true }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { type: object, properties: { simulation: { $ref: '#/components/schemas/Simulation' } } } }
+ *                   properties: { data: { type: object, properties: { conversation: { $ref: '#/components/schemas/Conversation' } } } }
  *       401:
  *         description: Missing, invalid, or expired access token.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       403:
- *         description: Role is not permitted to create simulations (ANALYST/VIEWER).
+ *         description: Role is not permitted to create conversations (ANALYST/VIEWER).
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       404:
- *         description: The referenced product does not exist or is not owned by the caller.
- *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
- *       409:
- *         description: A simulation with this title already exists for this owner+product.
+ *         description: The referenced customer agent does not exist or is not owned by the caller.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       422:
  *         description: Validation failed.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  */
-router.post('/', requireRoles(...MANAGE_ROLES), createSimulationValidator, validate, simulationController.create);
+router.post('/', requireRoles(...MANAGE_ROLES), createConversationValidator, validate, conversationController.create);
 
 /**
  * @openapi
- * /simulations/{id}:
+ * /conversations/{id}:
  *   patch:
- *     tags: [Simulations]
- *     summary: Update a simulation.
+ *     tags: [Conversations]
+ *     summary: Update a conversation.
  *     description: >
- *       Requires ADMIN or BUSINESS_OWNER. Status changes are validated
- *       against a fixed transition graph (draft → running/cancelled,
- *       running → paused/completed/cancelled, paused → running/cancelled;
- *       completed and cancelled are terminal). `statistics` is always
- *       recomputed server-side and can never be set directly.
+ *       Requires ADMIN or BUSINESS_OWNER. `status` may only be set to
+ *       "Open" or "Closed" here — "Archived" is only ever set via
+ *       `PATCH /conversations/{id}/archive`. `messageCount`, `lastMessage`,
+ *       and `lastActivity` are never accepted.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -258,18 +242,11 @@ router.post('/', requireRoles(...MANAGE_ROLES), createSimulationValidator, valid
  *             type: object
  *             properties:
  *               title: { type: string }
- *               description: { type: string }
- *               industry: { type: string }
- *               targetAudience: { type: string }
- *               objective: { type: string }
- *               customerCount: { type: integer, minimum: 0 }
- *               estimatedDuration: { type: integer, minimum: 0 }
- *               status: { type: string, enum: [draft, running, paused, completed, cancelled] }
- *               progress: { type: integer, minimum: 0, maximum: 100 }
- *               configuration: { $ref: '#/components/schemas/SimulationConfiguration' }
+ *               status: { type: string, enum: [Open, Closed] }
+ *               metadata: { $ref: '#/components/schemas/ConversationMetadata' }
  *     responses:
  *       200:
- *         description: Simulation updated.
+ *         description: Conversation updated.
  *         content:
  *           application/json:
  *             schema:
@@ -277,36 +254,33 @@ router.post('/', requireRoles(...MANAGE_ROLES), createSimulationValidator, valid
  *                 - type: object
  *                   properties: { success: { type: boolean, example: true }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { type: object, properties: { simulation: { $ref: '#/components/schemas/Simulation' } } } }
+ *                   properties: { data: { type: object, properties: { conversation: { $ref: '#/components/schemas/Conversation' } } } }
  *       401:
  *         description: Missing, invalid, or expired access token.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       403:
- *         description: Role is not permitted to update simulations (ANALYST/VIEWER).
+ *         description: Role is not permitted to update conversations (ANALYST/VIEWER).
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       404:
- *         description: Simulation does not exist, is archived, or is not owned by the caller.
- *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
- *       409:
- *         description: Renaming collides with another simulation for the same owner+product, or the status transition is not allowed from the current state.
+ *         description: Conversation does not exist, is archived, or is not owned by the caller.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       422:
  *         description: Validation failed.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  */
-router.patch('/:id', requireRoles(...MANAGE_ROLES), simulationIdParamValidator, updateSimulationValidator, validate, simulationController.update);
+router.patch('/:id', requireRoles(...MANAGE_ROLES), conversationIdParamValidator, updateConversationValidator, validate, conversationController.update);
 
 /**
  * @openapi
- * /simulations/{id}:
+ * /conversations/{id}:
  *   delete:
- *     tags: [Simulations]
- *     summary: Soft-delete (archive) a simulation.
+ *     tags: [Conversations]
+ *     summary: Soft-delete (archive) a conversation.
  *     description: >
  *       Sets `isActive` to false and cascades the same soft-delete to every
- *       active customer agent belonging to this simulation — agents are
- *       never physically removed. Identical in effect to
- *       `PATCH /simulations/{id}/archive`. Requires ADMIN or BUSINESS_OWNER.
+ *       message in this conversation — messages are never physically
+ *       removed. Identical in effect to `PATCH /conversations/{id}/archive`.
+ *       Requires ADMIN or BUSINESS_OWNER.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -315,26 +289,26 @@ router.patch('/:id', requireRoles(...MANAGE_ROLES), simulationIdParamValidator, 
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Simulation (and its agents) soft-deleted.
+ *         description: Conversation (and its messages) soft-deleted.
  *       401:
  *         description: Missing, invalid, or expired access token.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       403:
- *         description: Role is not permitted to delete simulations (ANALYST/VIEWER).
+ *         description: Role is not permitted to delete conversations (ANALYST/VIEWER).
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       404:
- *         description: Simulation does not exist, is already archived, or is not owned by the caller.
+ *         description: Conversation does not exist, is already archived, or is not owned by the caller.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  */
-router.delete('/:id', requireRoles(...MANAGE_ROLES), simulationIdParamValidator, validate, simulationController.remove);
+router.delete('/:id', requireRoles(...MANAGE_ROLES), conversationIdParamValidator, validate, conversationController.remove);
 
 /**
  * @openapi
- * /simulations/{id}/archive:
+ * /conversations/{id}/archive:
  *   patch:
- *     tags: [Simulations]
- *     summary: Archive a simulation (alias of DELETE).
- *     description: Identical operation to `DELETE /simulations/{id}` — provided as a non-destructive-sounding alternative for UI actions. Requires ADMIN or BUSINESS_OWNER.
+ *     tags: [Conversations]
+ *     summary: Archive a conversation (alias of DELETE).
+ *     description: Identical operation to `DELETE /conversations/{id}`. Requires ADMIN or BUSINESS_OWNER.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -343,30 +317,31 @@ router.delete('/:id', requireRoles(...MANAGE_ROLES), simulationIdParamValidator,
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Simulation (and its agents) soft-deleted.
+ *         description: Conversation (and its messages) soft-deleted.
  *       401:
  *         description: Missing, invalid, or expired access token.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       403:
- *         description: Role is not permitted to archive simulations (ANALYST/VIEWER).
+ *         description: Role is not permitted to archive conversations (ANALYST/VIEWER).
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       404:
- *         description: Simulation does not exist, is already archived, or is not owned by the caller.
+ *         description: Conversation does not exist, is already archived, or is not owned by the caller.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  */
-router.patch('/:id/archive', requireRoles(...MANAGE_ROLES), simulationIdParamValidator, validate, simulationController.archive);
+router.patch('/:id/archive', requireRoles(...MANAGE_ROLES), conversationIdParamValidator, validate, conversationController.archive);
 
 /**
  * @openapi
- * /simulations/{id}/restore:
+ * /conversations/{id}/restore:
  *   patch:
- *     tags: [Simulations]
- *     summary: Restore a previously archived simulation.
+ *     tags: [Conversations]
+ *     summary: Restore a previously archived conversation.
  *     description: >
- *       Sets `isActive` back to true. Does not cascade-restore customer
- *       agents — any agent soft-deleted independently before the simulation
- *       was archived must be restored on its own. Requires ADMIN or
- *       BUSINESS_OWNER.
+ *       Sets `isActive` back to true and reopens the conversation
+ *       (`status: "Open"`). Does not cascade-restore messages — any
+ *       message soft-deleted by the archive cascade (or independently)
+ *       stays soft-deleted; there is no message-restore endpoint. Requires
+ *       ADMIN or BUSINESS_OWNER.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -375,7 +350,7 @@ router.patch('/:id/archive', requireRoles(...MANAGE_ROLES), simulationIdParamVal
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Simulation restored.
+ *         description: Conversation restored.
  *         content:
  *           application/json:
  *             schema:
@@ -383,20 +358,20 @@ router.patch('/:id/archive', requireRoles(...MANAGE_ROLES), simulationIdParamVal
  *                 - type: object
  *                   properties: { success: { type: boolean, example: true }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { type: object, properties: { simulation: { $ref: '#/components/schemas/Simulation' } } } }
+ *                   properties: { data: { type: object, properties: { conversation: { $ref: '#/components/schemas/Conversation' } } } }
  *       401:
  *         description: Missing, invalid, or expired access token.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       403:
- *         description: Role is not permitted to restore simulations (ANALYST/VIEWER).
+ *         description: Role is not permitted to restore conversations (ANALYST/VIEWER).
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       404:
- *         description: Simulation does not exist or is not owned by the caller.
+ *         description: Conversation does not exist or is not owned by the caller.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  *       409:
- *         description: Simulation is not currently archived.
+ *         description: Conversation is not currently archived.
  *         content: { application/json: { schema: { $ref: '#/components/schemas/ApiErrorResponse' } } }
  */
-router.patch('/:id/restore', requireRoles(...MANAGE_ROLES), simulationIdParamValidator, validate, simulationController.restore);
+router.patch('/:id/restore', requireRoles(...MANAGE_ROLES), conversationIdParamValidator, validate, conversationController.restore);
 
 module.exports = router;

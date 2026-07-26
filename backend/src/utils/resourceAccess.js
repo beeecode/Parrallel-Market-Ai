@@ -1,9 +1,13 @@
 const { ROLES } = require('../constants/roles');
 
-/** Handles both a populated owner (sub-document) and a bare ObjectId/string reference. */
+/** Handles both a populated reference (sub-document) and a bare ObjectId/string reference. */
+function resolveRefId(resource, field = 'owner') {
+  const value = resource[field];
+  return (value && value._id ? value._id : value).toString();
+}
+
 function resolveOwnerId(resource) {
-  const owner = resource.owner;
-  return (owner && owner._id ? owner._id : owner).toString();
+  return resolveRefId(resource, 'owner');
 }
 
 /**
@@ -30,4 +34,4 @@ function canAccessResource(resource, user) {
   return true;
 }
 
-module.exports = { resolveOwnerId, scopeToOwnerIfNeeded, canAccessResource };
+module.exports = { resolveRefId, resolveOwnerId, scopeToOwnerIfNeeded, canAccessResource };

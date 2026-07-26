@@ -8,8 +8,10 @@ const API_ROUTES = Object.freeze({
   customers: '/customers',
   simulations: '/simulations',
   customerAgents: '/customer-agents',
+  conversations: '/conversations',
   messages: '/messages',
   reports: '/reports',
+  insights: '/insights',
   requestSimulation: '/request-simulation',
 });
 

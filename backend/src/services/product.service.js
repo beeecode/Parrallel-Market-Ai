@@ -58,7 +58,21 @@ async function createProduct(user, payload) {
     throw new ConflictError(DUPLICATE_MESSAGE);
   }
 
-  const created = await productRepository.create({ ...payload, owner: user.sub, status: payload.status ?? PRODUCT_STATUS.DRAFT });
+  // Built explicitly (not spread from `payload`) so a client can never sneak an
+  // unlisted field — e.g. `isActive: false` — into a newly created document;
+  // express-validator validates known fields but never strips unknown ones.
+  const created = await productRepository.create({
+    name: payload.name,
+    description: payload.description,
+    category: payload.category,
+    price: payload.price,
+    currency: payload.currency,
+    status: payload.status ?? PRODUCT_STATUS.DRAFT,
+    targetAudience: payload.targetAudience,
+    features: payload.features,
+    imageUrl: payload.imageUrl,
+    owner: user.sub,
+  });
   const populated = await productRepository.findById(created.id);
   return populated.toJSON();
 }

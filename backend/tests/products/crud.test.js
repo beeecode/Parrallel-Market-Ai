@@ -22,6 +22,15 @@ describe('POST /api/products', () => {
     expect(response.body.data.product.owner.id).toBe(userId);
   });
 
+  it('ignores an isActive field injected into the create body (cannot create a pre-soft-deleted product)', async () => {
+    const { token } = await tokenForRole('BUSINESS_OWNER');
+
+    const response = await createTestProduct(app, token, { isActive: false });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.product.isActive).toBe(true);
+  });
+
   it('rejects a second product with the same name for the same owner', async () => {
     const { token } = await tokenForRole('BUSINESS_OWNER');
     await createTestProduct(app, token);

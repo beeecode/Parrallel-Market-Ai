@@ -35,10 +35,17 @@ The health feature (`repositories/health.repository.js` →
 `services/health.service.js` → `controllers/health.controller.js`), the
 auth/profile feature (`repositories/user.repository.js` →
 `services/{auth,user}.service.js` →
-`controllers/{auth,profile}.controller.js`), and Products/Customers
+`controllers/{auth,profile}.controller.js`), Products/Customers
 (`repositories/{product,customer}.repository.js` →
 `services/{product,customer}.service.js` →
-`controllers/{product,customer}.controller.js`) are implemented end-to-end.
+`controllers/{product,customer}.controller.js`), and
+Simulations/CustomerAgents
+(`repositories/{simulation,customerAgent}.repository.js` →
+`services/{simulation,customerAgent}.service.js` →
+`controllers/{simulation,customerAgent}.controller.js`), and
+Reports/Insights (`repositories/{report,insight}.repository.js` →
+`services/{report,insight}.service.js` →
+`controllers/{report,insight}.controller.js`) are implemented end-to-end.
 Every other resource is still a placeholder that returns `501` directly from
 `controllers/notImplemented.controller.js`.
 
@@ -194,11 +201,188 @@ behind them.
   `src/utils/pagination.js` (`parsePagination`/`buildPaginatedResult`)
   is the shared pagination utility — `{ page, limit }` in,
   `{ items, pagination: { page, limit, totalItems, totalPages } }` out —
-  used identically by both `listProducts` and `listCustomers`.
+  used identically by every list endpoint across every resource in this
+  API, including Simulations and Customer Agents below.
 - `owner` is populated with a trimmed, non-sensitive projection
   (`fullName email companyName`) on every read and after every
   create/update, via each repository's shared `OWNER_POPULATE_FIELDS`
   constant.
+- **`createProduct`/`createCustomer` build an explicit field list, never a
+  `{ ...payload, owner: user.sub }` spread.** `repository.create(data)` has
+  no field whitelist (unlike `update`, which is filtered by
+  `ALLOWED_UPDATE_FIELDS`) — it trusts the service completely. Since
+  express-validator only adds errors for the fields it checks and never
+  strips unrecognized ones, a raw spread of `payload` would let a client
+  hand `{ "name": "X", "price": 10, "isActive": false }` straight through to
+  `Model.create()` and mint an already-soft-deleted record. This was a real
+  bug found and fixed during Phase 5 (see `tests/products/crud.test.js` and
+  `tests/customers/crud.test.js` for the regression tests); Simulation and
+  CustomerAgent creation were written with the explicit-field pattern from
+  the start.
+
+## Simulations and Customer Agents
+
+Both are implemented end-to-end and documented in full in [API.md](API.md).
+They extend the Products/Customers ownership model one level deeper: a
+Simulation belongs to a Product, and a CustomerAgent belongs to a Simulation.
+
+- **Models** (`src/models/Simulation.js`, `src/models/CustomerAgent.js`):
+  Simulation has a compound unique index on `owner` + `product` + `title`
+  (case-insensitive, same collation as Products/Customers) — the same owner
+  can reuse a title on a *different* product, but not the same one twice.
+  CustomerAgent has a compound unique index on `simulation` + `name`. Both
+  nested objects (`Simulation.configuration`/`.statistics`,
+  `CustomerAgent.metadata`) are plain sub-schemas (`{ _id: false }`), not
+  separate collections.
+- **`src/utils/resourceAccess.js#resolveRefId(resource, field)`** generalizes
+  what was `resolveOwnerId` in Phase 4: it resolves any reference field
+  (`owner`, `product`, `simulation`) whether or not it's currently populated.
+  `resolveOwnerId(resource)` still exists as `resolveRefId(resource,
+  'owner')` for the existing call sites.
+- **Relationship validation is done by calling the other resource's
+  *service*, not its repository** — `simulation.service.js#createSimulation`
+  calls `productService.getProduct(user, payload.product)` unmodified, and
+  `customerAgent.service.js#createCustomerAgent` calls
+  `simulationService.getSimulation(user, payload.simulation)`. Reusing the
+  service (rather than querying the repository directly) means the
+  ownership/404 check is never duplicated — a BUSINESS_OWNER referencing a
+  product or simulation they don't own gets exactly the same 404 as fetching
+  it directly would produce. This is a one-directional dependency
+  (`customerAgent.service.js` → `simulation.service.js` →
+  `customerAgentRepository`) with no cycle back the other way.
+- **A CustomerAgent's `owner` is copied from its parent Simulation's
+  `owner`** at creation time — never from `req.user.sub`. If it were the
+  caller's id instead, an ADMIN creating an agent on a BUSINESS_OWNER's
+  simulation would orphan that agent from the owner's own resource list
+  (their `GET /api/customer-agents` would never show it). Copying the
+  simulation's owner keeps a BUSINESS_OWNER's view consistent regardless of
+  who actually created the agent.
+- **Nested partial updates are merged, not replaced.** `updateSimulation`
+  and `updateCustomerAgent` spread the *existing* `configuration`/`metadata`
+  sub-document under the incoming partial update
+  (`{ ...existing.configuration.toObject(), ...updates.configuration }`)
+  before persisting. Mongoose's `findOneAndUpdate` replaces a nested object
+  field wholesale when given a plain object value — without this merge, a
+  request that only sends `{ configuration: { difficulty: "hard" } }` would
+  silently wipe every other configuration field the client didn't mention.
+- **Statistics are always server-computed, never accepted from client
+  input** (`simulation.service.js#computeStatistics`) — simple, deterministic
+  formulas with no AI or randomness, detailed in [API.md](API.md).
+  Recomputed on simulation create/update and, via
+  `simulationService.recalculateStatistics(simulationId)`, whenever a
+  customer agent is created or soft-deleted for that simulation.
+- **Status transitions are validated against a fixed graph**
+  (`SIMULATION_STATUS_TRANSITIONS` in `src/constants/simulationStatus.js`);
+  an invalid transition raises `ConflictError` (409). `startedAt`/
+  `completedAt` are set automatically by the service on the relevant
+  transitions — never accepted from client input either.
+- **Cascading soft-delete, one level deep, one direction only:**
+  `simulationService.archiveSimulation` soft-deletes the simulation and then
+  calls `customerAgentRepository.softDeleteBySimulation(id)` to soft-delete
+  every active agent under it. `restoreSimulation` does **not** cascade the
+  other way — an agent that was soft-deleted independently before the
+  simulation was archived isn't resurrected by restoring the simulation,
+  since there's no way to distinguish "deleted by the cascade" from
+  "deleted on its own" without extra state this phase doesn't introduce.
+  `DELETE /simulations/:id` and `PATCH /simulations/:id/archive` are
+  intentionally the same operation under two route names — there is no
+  separate "archived" status distinct from the `isActive` soft-delete flag.
+- **Repository method names** (`findByOwner`, `findAll`, `count`, `update`,
+  `softDelete`, plus resource-specific lookups like `findBySimulation`/
+  `findDuplicateTitle`/`findDuplicateName`) follow the interface requested
+  for this phase. `findByOwner` and `findAll` are both real, distinct call
+  sites — the service branches on `user.role` and calls one or the other,
+  rather than always mutating one generic filter object. "Search" and
+  "paginate" are deliberately **not** separate repository functions: search
+  is expressed as filter criteria (`$or` with a regex) the service builds
+  and passes into `findAll`/`findByOwner`/`findBySimulation`, and pagination
+  is the shared `utils/pagination.js` helper — introducing parallel
+  mechanisms for either would contradict "reuse the existing pagination
+  helper, don't invent a new format."
+
+## Reports and Insights
+
+Both are implemented end-to-end and documented in full in [API.md](API.md).
+They extend the ownership chain one level further:
+User → Product → Simulation → Report → Insight.
+
+- **Models** (`src/models/Report.js`, `src/models/Insight.js`): Report has a
+  unique **partial** index on `simulation` scoped to `isActive: true`
+  (`{ unique: true, partialFilterExpression: { isActive: true } }`), not a
+  collation-based compound index like earlier phases — "one active report
+  per simulation" is a relationship constraint (there's nothing
+  case-insensitive to collide on), and a partial index lets multiple
+  *soft-deleted* reports pile up for the same simulation without ever
+  conflicting with the one active report. `Report.status` and
+  `Insight.importance`/`trend`/`RECOMMENDATION_PRIORITY` all use **capitalized**
+  enum values (`Draft`/`Generated`/`Archived`, `Low`/`Medium`/`High`/
+  `Critical`, `Positive`/`Neutral`/`Negative`) — a deliberate deviation from
+  the lowercase convention Product/Simulation/CustomerAgent use, because this
+  phase's spec explicitly capitalized them.
+- **`Report.status` doubles as the soft-delete label**, unlike Simulation
+  (where `status` and `isActive` are fully independent axes): archiving sets
+  `status: "Archived"` *and* `isActive: false` in the same update; restoring
+  sets `status: "Generated"` and `isActive: true`. There is no route that
+  transitions a report to `"Draft"` — reports are generated synchronously
+  and fully formed, so every report is created directly as `"Generated"`.
+- **Relationship validation reuses the other resource's *service*, exactly
+  like Simulation/CustomerAgent**: `report.service.js#generateReport` calls
+  `simulationService.getSimulation(user, payload.simulation)` (404 if
+  inaccessible, and its `status` is checked for `"completed"`, 409
+  otherwise). To avoid a circular require
+  (`report.service.js → insight.service.js → report.service.js`),
+  `report.service.js` talks to `insightRepository` **directly** for
+  generating and cascade-deleting insights, never to `insight.service.js`.
+  The one-directional dependency instead runs the other way:
+  `insight.service.js → report.service.js`, used only by
+  `listInsightsForReport` to validate access to the parent report — the same
+  shape as `customerAgent.service.js → simulation.service.js` in Phase 5.
+- **A Report's `owner` is copied from its Simulation's owner**, exactly like
+  CustomerAgent inheriting from Simulation — `generatedBy` is the separate,
+  always-the-caller audit field, so an ADMIN generating a report for a
+  BUSINESS_OWNER's simulation doesn't orphan the report from that owner's
+  own report list, while still recording who actually triggered generation.
+- **Idempotent generation, not a 409 duplicate error**: unlike every other
+  "duplicate" check in this codebase (which raises `ConflictError`),
+  `generateReport` returns the existing active report (`created: false`,
+  controller responds `200`) when one already exists for the simulation —
+  per this phase's explicit requirement that generating again "should return
+  the existing report instead of creating duplicates." The unique partial
+  index is a safety net for a race between two concurrent generate calls,
+  not the primary path.
+- **`src/services/reportAnalytics.js`** (`computeMetrics`, `buildSummary`,
+  `buildRecommendations`) and **`src/services/insightRules.js`**
+  (`buildInsights`) are pure-function modules — no repository access, no
+  side effects — deliberately separated from `report.service.js` so the
+  deterministic formulas and threshold rules are easy to find, read, and
+  unit-test in isolation (`tests/reports/analytics.test.js`,
+  `tests/insights/rules.test.js` need no database at all). Every formula and
+  threshold is documented in comments in those two files and summarized in
+  [API.md](API.md). None of it is AI, and none of it uses `Math.random` or
+  any other non-determinism.
+- **`positiveResponses`/`neutralResponses`/`negativeResponses` are tallied
+  from real per-agent data**, not reverse-engineered from the simulation's
+  single aggregate `averageSentiment` score —
+  `customerAgentRepository.findSentiments(simulationId)` (added in this
+  phase) returns each active agent's own `sentiment` field, which
+  `computeMetrics` counts directly. This is more honest than inventing a
+  proportional split from one number, and it means two simulations with the
+  same `averageSentiment` but different actual agent sentiment mixes
+  produce different, correct response-bucket counts.
+- **`generateReport` builds its repository payload as an explicit field
+  list**, continuing the Phase 5 fix — never a spread of `payload`, so a
+  client can't sneak `status`, `isActive`, or anything else unlisted into a
+  newly created report. `updateReport` is safe passing `updates` straight
+  through, because `reportRepository.update`'s `ALLOWED_UPDATE_FIELDS`
+  (`title`, `description`, `summary` only) filters it — the same
+  defense-in-depth split used by every other resource's update path.
+- **Cascading soft-delete, one level deep, one direction only** — identical
+  shape to Simulation → CustomerAgent: `archiveReport` soft-deletes the
+  report and calls `insightRepository.softDeleteByReport(id)`;
+  `restoreReport` does not cascade-restore insights, and there is no
+  insight-restore endpoint at all (insights have no manual lifecycle
+  endpoints whatsoever — they only exist as a byproduct of report
+  generation).
 
 ## Uploads
 

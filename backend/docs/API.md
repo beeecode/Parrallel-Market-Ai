@@ -156,6 +156,139 @@ only path to the index actually rejecting an insert).
 `isActive: true`, so a soft-deleted record behaves as if it doesn't exist
 everywhere except a direct database query.
 
+## Simulations (`/api/simulations`) and Customer Agents (`/api/customer-agents`)
+
+Both are fully implemented. A Simulation belongs to one owner and one
+Product; a Customer Agent belongs to one Simulation (and inherits its
+`owner` from that Simulation). All endpoints require authentication.
+
+| Method | Path                                  | Roles that may call it | Purpose |
+| ------ | ------------------------------------- | ------------------------ | ------- |
+| GET    | `/api/simulations`                     | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Paginated, searchable, sortable list |
+| GET    | `/api/simulations/{id}`                 | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Single simulation |
+| GET    | `/api/simulations/{id}/customer-agents`  | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Agents belonging to one simulation |
+| POST   | `/api/simulations`                      | ADMIN, BUSINESS_OWNER    | Create (owned by the caller, status always starts `draft`) |
+| PATCH  | `/api/simulations/{id}`                  | ADMIN, BUSINESS_OWNER    | Update fields and/or transition `status` |
+| DELETE | `/api/simulations/{id}`                  | ADMIN, BUSINESS_OWNER    | Soft-delete, cascades to the simulation's agents |
+| PATCH  | `/api/simulations/{id}/archive`           | ADMIN, BUSINESS_OWNER    | Identical operation to `DELETE` above |
+| PATCH  | `/api/simulations/{id}/restore`           | ADMIN, BUSINESS_OWNER    | Un-does archive/delete (does not restore agents) |
+| GET    | `/api/customer-agents`                   | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Paginated, searchable, sortable list |
+| GET    | `/api/customer-agents/{id}`               | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Single agent |
+| POST   | `/api/customer-agents`                    | ADMIN, BUSINESS_OWNER    | Create on a simulation the caller can access |
+| PATCH  | `/api/customer-agents/{id}`                | ADMIN, BUSINESS_OWNER    | Update |
+| DELETE | `/api/customer-agents/{id}`                | ADMIN, BUSINESS_OWNER    | Soft-delete |
+
+Ownership, 404-not-403, pagination/search/sort, and soft-delete all follow
+exactly the same rules as Products/Customers above. See Swagger
+(`GET /api/docs`) for full request/response schemas and examples.
+
+**Simulation status workflow** (`status` field): `draft → running →
+{paused, completed, cancelled}`, `paused → {running, cancelled}`.
+`completed` and `cancelled` are terminal. An invalid transition returns
+`409 CONFLICT`. Transitioning to `running` for the first time sets
+`startedAt`; transitioning to `completed` sets `completedAt` and forces
+`progress` to `100`; transitioning to `cancelled` sets `completedAt`.
+
+**Statistics** (`statistics` on Simulation) are always computed server-side
+and can never be set via the API — simple, deterministic, no AI:
+
+| Field | Formula |
+| ----- | ------- |
+| `conversationCount` | Count of this simulation's active customer agents |
+| `responseRate` | `round(activeAgentCount / customerCount * 100)`, `0` if `customerCount` is `0` |
+| `completionRate` | `100` once `status` is `completed`, otherwise mirrors `progress` |
+| `averageSentiment` | Fixed mapping of `configuration.sentiment`: positive→100, neutral/mixed→50, negative→0 |
+
+Recomputed whenever a simulation is created/updated, and whenever one of its
+customer agents is created or soft-deleted.
+
+**Cascading soft-delete:** archiving/deleting a Simulation also soft-deletes
+every active Customer Agent belonging to it (agents are never physically
+removed). Restoring a Simulation does **not** cascade-restore its agents —
+an agent removed independently before the cascade must be restored on its
+own; this phase has no restore endpoint for agents.
+
+**Relationship validation:** creating a Simulation requires an accessible
+Product (`404` if it doesn't exist or belongs to another owner); creating a
+Customer Agent requires an accessible Simulation (same rule). A Customer
+Agent's `owner` is always copied from its parent Simulation's `owner` — never
+from the caller — so ownership stays consistent even when ADMIN creates an
+agent on someone else's simulation.
+
+## Reports (`/api/reports`) and Insights (`/api/insights`)
+
+Both are fully implemented. A Report belongs to exactly one Simulation and
+one Product; an Insight belongs to exactly one Report (and inherits its
+`owner` from that Report). All endpoints require authentication.
+
+| Method | Path                            | Roles that may call it | Purpose |
+| ------ | -------------------------------- | ------------------------ | ------- |
+| GET    | `/api/reports`                    | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Paginated, searchable, sortable list |
+| GET    | `/api/reports/{id}`                | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Single report |
+| GET    | `/api/reports/{id}/insights`        | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Insights belonging to one report |
+| POST   | `/api/reports/generate`             | ADMIN, BUSINESS_OWNER    | Generate a report from a **completed** simulation (idempotent — see below) |
+| PATCH  | `/api/reports/{id}`                  | ADMIN, BUSINESS_OWNER    | Update `title`/`description`/`summary` only |
+| DELETE | `/api/reports/{id}`                  | ADMIN, BUSINESS_OWNER    | Soft-delete, cascades to the report's insights |
+| PATCH  | `/api/reports/{id}/archive`           | ADMIN, BUSINESS_OWNER    | Identical operation to `DELETE` above |
+| PATCH  | `/api/reports/{id}/restore`           | ADMIN, BUSINESS_OWNER    | Un-does archive/delete (does not restore insights) |
+| GET    | `/api/insights`                       | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Paginated, searchable, sortable list |
+| GET    | `/api/insights/{id}`                   | ADMIN, BUSINESS_OWNER, ANALYST, VIEWER | Single insight |
+
+There is **no manual insight-creation endpoint** — insights are always an
+automatic side effect of `POST /reports/generate`.
+
+Ownership, 404-not-403, pagination/search/sort, and soft-delete all follow
+exactly the same rules as Products/Customers/Simulations above. See Swagger
+(`GET /api/docs`) for full request/response schemas and examples.
+
+**Generation rules:**
+
+- Only a simulation with `status: "completed"` may generate a report —
+  attempting it from `draft`/`running`/`paused`/`cancelled` returns
+  `409 CONFLICT`.
+- At most one *active* report exists per simulation. Calling
+  `POST /reports/generate` again for the same simulation does **not** create
+  a duplicate — it returns the existing report with `200` (the first
+  successful generation returns `201`).
+- `metrics`, `recommendations`, `generatedAt`, and `generatedBy` are always
+  server-computed. No client input for any of them is ever accepted — not
+  on generate, not on update.
+- A report's `owner` is copied from its simulation's owner (same pattern as
+  Customer Agent inheriting from Simulation); `generatedBy` is always the
+  caller who triggered generation — the two can differ when ADMIN generates
+  a report on a BUSINESS_OWNER's simulation.
+
+**Metrics** (`metrics` on Report) are always computed server-side from the
+source simulation's own data — simple, deterministic, no AI:
+
+| Field | Formula |
+| ----- | ------- |
+| `conversationCount`, `completionRate`, `responseRate`, `averageSentiment` | Carried over unchanged from `simulation.statistics` |
+| `positiveResponses` / `neutralResponses` / `negativeResponses` | Tallied from each active Customer Agent's own `sentiment` field for that simulation (`mixed` folds into neutral) |
+| `averageResponseTime` (seconds) | `round(estimatedDuration * 60 / max(conversationCount, 1))`, or `0` if the simulation has no `estimatedDuration` |
+| `conversionScore` | `round(completionRate * 0.6 + responseRate * 0.4)` |
+| `engagementScore` | `round(responseRate * 0.5 + averageSentiment * 0.5)` |
+
+**Recommendations** (`recommendations` on Report) are generated from fixed
+threshold rules over `metrics` (low conversion/engagement/sentiment/
+completion each add a recommendation; strong conversion with more positive
+than negative responses adds a "scale it" recommendation; if nothing
+triggers, a single "maintain current strategy" recommendation is added so
+the array is never empty). See `src/services/reportAnalytics.js` for the
+exact thresholds.
+
+**Insights** are generated from ten independent, fixed threshold rules over
+the same `metrics` (any number can fire for one report): High Engagement,
+Low Sentiment, Strong/Weak Conversion, Customer Satisfaction, Pricing
+Concern, Purchase Hesitation, Communication Issue, Product Fit, and
+Response Quality (both a "concern" and a "strong" variant). See
+`src/services/insightRules.js` for the exact thresholds and
+[ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning.
+
+**Cascading soft-delete:** archiving/deleting a Report also soft-deletes
+every active Insight belonging to it. Restoring a Report does **not**
+cascade-restore its insights — there is no insight-restore endpoint at all.
+
 ## Placeholder resource groups
 
 Each of the following is mounted and responds `501 Not Implemented` (via the
@@ -164,9 +297,7 @@ standard envelope) for **every** HTTP method and sub-path:
 | Path                      | Reserved for |
 | ------------------------- | ------------ |
 | `/api/users`                | User *administration* (distinct from `/api/auth`, which owns the current user's own identity) |
-| `/api/simulations`           | Simulation workflows |
 | `/api/messages`              | Conversations and messages |
-| `/api/reports`               | Reports and insights |
 | `/api/request-simulation`     | Custom simulation request intake |
 
 ```json
