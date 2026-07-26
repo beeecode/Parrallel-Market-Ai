@@ -1,0 +1,19 @@
+const SIMULATION_STATUS = Object.freeze({
+  DRAFT: 'draft',
+  RUNNING: 'running',
+  PAUSED: 'paused',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+});
+
+/**
+ * Allowed status transitions. A status not present as a key (COMPLETED,
+ * CANCELLED) is terminal — no further transition is allowed out of it.
+ */
+const SIMULATION_STATUS_TRANSITIONS = Object.freeze({
+  [SIMULATION_STATUS.DRAFT]: [SIMULATION_STATUS.RUNNING, SIMULATION_STATUS.CANCELLED],
+  [SIMULATION_STATUS.RUNNING]: [SIMULATION_STATUS.PAUSED, SIMULATION_STATUS.COMPLETED, SIMULATION_STATUS.CANCELLED],
+  [SIMULATION_STATUS.PAUSED]: [SIMULATION_STATUS.RUNNING, SIMULATION_STATUS.CANCELLED],
+});
+
+module.exports = { SIMULATION_STATUS, SIMULATION_STATUS_TRANSITIONS };
